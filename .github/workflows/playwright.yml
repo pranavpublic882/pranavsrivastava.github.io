@@ -5,7 +5,28 @@ on:
   pull_request:
     branches: [ main, master ]
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      test-files: ${{ steps.changed-files.outputs.all_changed_files }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Get changed files
+      id: changed-files
+      run: |
+        if [ "${{ github.event_name }}" == "pull_request" ]; then
+          FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} HEAD | grep 'tests/.*\.spec\.' | tr '\n' ' ')
+        else
+          FILES=$(git diff --name-only HEAD~1 HEAD | grep 'tests/.*\.spec\.' | tr '\n' ' ')
+        fi
+        echo "all_changed_files=$FILES" >> $GITHUB_OUTPUT
+        echo "Changed test files: $FILES"
+
   test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.test-files != ''
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
@@ -17,8 +38,8 @@ jobs:
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
-    - name: Run Playwright tests
-      run: npx playwright test tests/amazon-macbook-filter.spec.js
+    - name: Run modified Playwright tests
+      run: npx playwright test ${{ needs.detect-changes.outputs.test-files }}
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
       with:
